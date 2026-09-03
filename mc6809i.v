@@ -192,7 +192,7 @@ reg     [15:0] ea_p1;
 // that changes the value of S from the default (which is currently $0) will clear the mask.  A reset will set the mask again.
 reg     NMIMask;
 
-reg     NMILatched;
+reg     NMILatched = 1;     // Powers up inactive (see the /RESET term on the latch below)
 reg     NMISample;
 reg     NMISample2;
 reg     NMIClear;
@@ -533,9 +533,20 @@ endgenerate
 ///////////////////////////////////////////////////////////////////////
 
 
-always @(negedge NMISample2 or posedge wNMIClear)
+// NMILatched is the only interrupt latch with no unconditional refresh path.  IRQLatched,
+// FIRQLatched, HALTLatched and DMABREQLatched reload from their samplers on every falling E,
+// so they recover from any power-up state within a couple of cycles.  This one is written only
+// when /NMI falls or when an NMI is serviced, so without the asynchronous /RESET below it keeps
+// whatever value it powers up with, and a 0 reads as an NMI pending on the first instruction
+// fetch.  A design that ties /NMI inactive never clocks this latch at all.
+//
+// The declaration also initializes it, because /RESET may already be low at time 0 in simulation
+// and so never produce the falling edge that triggers this block.
+always @(negedge NMISample2 or posedge wNMIClear or negedge nRESET)
 begin
-    if (wNMIClear == 1)
+    if (nRESET == 0)
+        NMILatched <= 1;
+    else if (wNMIClear == 1)
         NMILatched <= 1;
     else if (NMIMask == 0)
         NMILatched <= 0;
